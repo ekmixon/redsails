@@ -77,8 +77,8 @@ class loggingUtils:
 
 	def cleanPayload(self):
 		all_chars = (unichr(i) for i in xrange(0x110000))
-		control_chars = ''.join(map(unichr, range(0,32) + range(127,160)))
-		control_char_re = re.compile('[%s]' % re.escape(control_chars))
+		control_chars = ''.join(map(unichr, range(32) + range(127,160)))
+		control_char_re = re.compile(f'[{re.escape(control_chars)}]')
 
 		if self.proto == "TCP":
 			return control_char_re.sub('', self.packet.tcp.payload)

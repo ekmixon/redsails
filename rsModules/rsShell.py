@@ -6,13 +6,13 @@ class rsShell():
 		self.execute()
 
 	def execute(self):
-		shCmdList = [i for i in (self.payload.strip()).split(" ")]
-		
+		shCmdList = list((self.payload.strip()).split(" "))
+
 		try:
 			proc = subprocess.Popen(shCmdList,\
-									stdout=subprocess.PIPE,\
-									universal_newlines=True)
+										stdout=subprocess.PIPE,\
+										universal_newlines=True)
 
 			self.response = proc.stdout.read()
 		except Exception as e:
-			self.response = "%s" % (e)
+			self.response = f"{e}"

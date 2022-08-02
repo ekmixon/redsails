@@ -46,9 +46,7 @@ class AESCipher:
 		iv = cipherText[:16]
 		cipher = AES.new(self.keyDerivation, AES.MODE_CBC, iv)
 		paddedText = cipher.decrypt(cipherText[16:])
-		plainText = self.subPadding(paddedText)
-		
-		return plainText
+		return self.subPadding(paddedText)
 
 	# TODO: Use p-rand int for char() for more padding entropy
 	def addPadding(self, payload):

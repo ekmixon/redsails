@@ -12,7 +12,7 @@ class TCPListener:
 		#self.loggingTCPListener = loggingUtils("tcpListener-debug.log")
 
 		self.listenPort = listenPort
-		self.filter = "tcp.DstPort == %s" % (self.listenPort)
+		self.filter = f"tcp.DstPort == {self.listenPort}"
 		self.listener = WinDivert(self.filter)
 
 	def startListener(self):
@@ -56,26 +56,16 @@ class TCPListener:
 class TCPHelper:
 	def isInitConnection(self, packet):
 		self.packet = packet
-		only_SYN = False
-		null_payload = False
-		ack_zero = False
-
 		self.getFlags()
 
-		if (self.flags[0] == 1) and ((self.flags[1]+self.flags[2]+self.flags[3]+self.flags[4]) == 0):
-			only_SYN = True
+		only_SYN = (
+			self.flags[0] == 1
+			and (self.flags[1] + self.flags[2] + self.flags[3] + self.flags[4]) == 0
+		)
 
-		if (len(self.packet.tcp.payload) == 0):
-			null_payload = True
-
-		if (self.packet.tcp.ack_num == 0):
-			ack_zero = True
-
-		if (only_SYN and null_payload and ack_zero):
-			return True
-
-		else:
-			return False
+		null_payload = len(self.packet.tcp.payload) == 0
+		ack_zero = self.packet.tcp.ack_num == 0
+		return only_SYN and null_payload and ack_zero
 
 	def getFlags(self):
 		self.flags = [0, 0, 0, 0, 0]
@@ -148,26 +138,16 @@ class ProxyListener:
 class ProxyHelper:
 	def isInitConnection(self, packet):
 		self.packet = packet
-		only_SYN = False
-		null_payload = False
-		ack_zero = False
-
 		self.getFlags()
 
-		if (self.flags[0] == 1) and ((self.flags[1]+self.flags[2]+self.flags[3]+self.flags[4]) == 0):
-			only_SYN = True
+		only_SYN = (
+			self.flags[0] == 1
+			and (self.flags[1] + self.flags[2] + self.flags[3] + self.flags[4]) == 0
+		)
 
-		if (len(self.packet.tcp.payload) == 0):
-			null_payload = True
-
-		if (self.packet.tcp.ack_num == 0):
-			ack_zero = True
-
-		if (only_SYN and null_payload and ack_zero):
-			return True
-
-		else:
-			return False
+		null_payload = len(self.packet.tcp.payload) == 0
+		ack_zero = self.packet.tcp.ack_num == 0
+		return only_SYN and null_payload and ack_zero
 
 	def getFlags(self):
 		self.flags = [0, 0, 0, 0, 0]

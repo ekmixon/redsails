@@ -15,17 +15,17 @@ class rsPowerShell():
 
 		except:
 			psCmdList = ["C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\PowerShell.exe", "-EncodedCommand"]
-		
+
 		psCmdList.append(b64encode((self.payload.strip()).encode('UTF-16LE')))
-		
+
 		try:
 			proc = subprocess.Popen(psCmdList,\
-									stdout=subprocess.PIPE,\
-									stderr=subprocess.PIPE,\
-									shell=True,\
-									universal_newlines=True)
+										stdout=subprocess.PIPE,\
+										stderr=subprocess.PIPE,\
+										shell=True,\
+										universal_newlines=True)
 
 			self.response = proc.stdout.read()
 
 		except Exception as e:
-			self.response = "%s" % (e)
+			self.response = f"{e}"
